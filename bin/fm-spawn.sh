@@ -3983,9 +3983,23 @@ else
           HERDR_LAUNCHER_STATUS=$?
           set -e
           case "$HERDR_LAUNCHER_STATUS" in
-          0) HERDR_PARENT_WORKSPACE_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID ;;
-          2) HERDR_PARENT_WORKSPACE_ID=$(fm_backend_herdr_projection_parent_workspace_exact \
-            "$HERDR_SES" "$HERDR_PARENT_LABEL" 2>/dev/null || true) ;;
+          0)
+            HERDR_PARENT_WORKSPACE_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
+            if [ -n "${FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_LABEL:-}" ]; then
+              HERDR_PARENT_LABEL=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_LABEL
+            fi
+            ;;
+          2)
+            herdr_parent_raw=$(fm_backend_herdr_projection_parent_workspace_exact \
+              "$HERDR_SES" "$HERDR_PARENT_LABEL" 2>/dev/null || true)
+            HERDR_PARENT_WORKSPACE_ID=${herdr_parent_raw%%$'\t'*}
+            case "$herdr_parent_raw" in
+              *$'\t'*)
+                herdr_parent_live=${herdr_parent_raw#*$'\t'}
+                [ -n "$herdr_parent_live" ] && HERDR_PARENT_LABEL=$herdr_parent_live
+                ;;
+            esac
+            ;;
           *)
             spawn_herdr_presentation_order_lock_release
             exit 1

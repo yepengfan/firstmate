@@ -1761,6 +1761,7 @@ fm_backend_herdr_launcher_identity() {  # <session>
   FM_BACKEND_HERDR_LAUNCHER_PANE_ID=""
   FM_BACKEND_HERDR_LAUNCHER_TAB_ID=""
   FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=""
+  FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_LABEL=""
   [ -n "$pane" ] || return 2
 
   # Same-session proof, before the pane id is trusted at all: herdr pane ids
@@ -1842,6 +1843,13 @@ fm_backend_herdr_launcher_identity() {  # <session>
   # shellcheck disable=SC2034  # callers consume the verified binding's parts
   FM_BACKEND_HERDR_LAUNCHER_TAB_ID=$tab
   FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=$workspace
+  # The id above is the placement authority. The label is the current snapshot
+  # only, so a renamed parent still binds and is not treated as a different home.
+  # shellcheck disable=SC2034  # fm-spawn copies this into the presentation journal
+  FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_LABEL=$(printf '%s' "$list" | jq -r --arg workspace "$workspace" '
+    [.result.workspaces[] | select(.workspace_id == $workspace)]
+    | if length == 1 and (.[0].label | type) == "string" then .[0].label else "" end
+  ')
   return 0
 }
 
@@ -1961,16 +1969,116 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #   other-home    - a --secondmate launch, which stands up a DIFFERENT home's
 #                   own per-home workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
-# With no herdr ancestry at all there is no launcher workspace to inherit, so
-# the per-home label lookup below stays the resolver - but it must then resolve
-# to exactly ONE workspace. Two same-labeled home workspaces with no launcher
-# identity to disambiguate them is an unresolvable placement, and adopting
-# either one is the very defect this refuses.
+# With no herdr ancestry at all there is no launcher workspace to inherit.
+# A parent id proven by this home's validated journals is the placement
+# authority and wins over the role label. The role label is only the fallback
+# when no such parent is recorded. It must then resolve to exactly ONE
+# workspace. Two same-labeled home workspaces with no launcher identity and no
+# proven parent is an unresolvable placement, and adopting either one is the
+# very defect this refuses. An unreadable workspace inventory cannot prove
+# that absence, so it refuses before any create.
 #
 # Returns 0 on success, 3 for a refusal whose exact reason is already on
 # stderr, and 1 for a failed or unparseable herdr call.
+# fm_backend_herdr_workspace_inventory: read one workspace list and prove it
+# names each workspace exactly once. Prints the JSON body.
+# Returns 1 when the CLI fails, the body is not a workspace array, an id is
+# missing, or any workspace_id is repeated. An empty array is a proven empty
+# inventory. It never creates a workspace.
+fm_backend_herdr_workspace_inventory() {  # <session>
+  local session=$1 list
+  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 1
+  printf '%s' "$list" | jq -e '
+    (.result.workspaces | type) == "array"
+    and all(.result.workspaces[];
+      (. | type) == "object"
+      and (.workspace_id | type) == "string"
+      and (.workspace_id | length) > 0)
+    and (([.result.workspaces[].workspace_id] | unique | length)
+      == (.result.workspaces | length))
+  ' >/dev/null 2>&1 || return 1
+  printf '%s' "$list"
+}
+
+# fm_backend_herdr_bound_parent_id: the one parent workspace id this home's
+# validated version 2 presentation journals agree on, when that id is still
+# present exactly once in <workspace-list-json>.
+# A journal counts only after fm_backend_herdr_projection_journal_snapshot
+# accepts it and the matching task metadata names the same session, workspace,
+# tab, and pane. A partial journal, a symlink, or metadata that disagrees is
+# not placement authority and is ignored. The child workspace id in the
+# journal is never returned. Prints the parent id.
+# Returns 2 when no accepted journal names a live parent, and 1 when the
+# accepted journals disagree, a parent id is malformed, or the list cannot
+# prove a single live match. Labels are not consulted.
+fm_backend_herdr_bound_parent_id() {  # <session> <workspace-list-json>
+  local session=$1 list=$2 home state journal journal_session journal_home parent
+  local found=" " id count live_ids="" live base task_id meta
+  local meta_session meta_workspace meta_tab meta_pane
+  [ -n "${FM_HOME:-}" ] || return 2
+  home=$(fm_backend_herdr_projection_home_identity "$FM_HOME" 2>/dev/null) || return 2
+  state="${FM_HOME%/}/state"
+  [ -d "$state" ] && [ ! -L "$state" ] || return 2
+  for journal in "$state"/*.herdr-presentation; do
+    [ -f "$journal" ] && [ ! -L "$journal" ] || continue
+    base=$(basename "$journal")
+    case "$base" in
+      *"$FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX")
+        task_id=${base%"$FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX"}
+        ;;
+      *) continue ;;
+    esac
+    fm_backend_herdr_projection_journal_snapshot "$journal" "$task_id" >/dev/null 2>&1 || continue
+    [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ] || continue
+    journal_session=$FM_BACKEND_HERDR_JOURNAL_SESSION
+    [ "$journal_session" = "$session" ] || continue
+    journal_home=$FM_BACKEND_HERDR_JOURNAL_HOME
+    [ "$journal_home" = "$home" ] || continue
+    parent=$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID
+    case "$parent" in
+      ''|*[!A-Za-z0-9:_-]*) return 1 ;;
+    esac
+    meta="$state/$task_id.meta"
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    meta_session=$(fm_backend_herdr_projection_journal_field "$meta" herdr_session 2>/dev/null) || continue
+    meta_workspace=$(fm_backend_herdr_projection_journal_field "$meta" herdr_workspace_id 2>/dev/null) || continue
+    meta_tab=$(fm_backend_herdr_projection_journal_field "$meta" herdr_tab_id 2>/dev/null) || continue
+    meta_pane=$(fm_backend_herdr_projection_journal_field "$meta" herdr_pane_id 2>/dev/null) || continue
+    [ "$meta_session" = "$journal_session" ] || continue
+    [ "$meta_workspace" = "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" ] || continue
+    [ "$meta_tab" = "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" ] || continue
+    [ "$meta_pane" = "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" ] || continue
+    case "$found" in
+      *" $parent "*) ;;
+      *) found="$found$parent " ;;
+    esac
+  done
+  [ "$found" != " " ] || return 2
+  for id in $found; do
+    count=$(printf '%s' "$list" | jq -r --arg id "$id" \
+      '[.result.workspaces[]? | select(.workspace_id == $id)] | length' 2>/dev/null) || return 1
+    [ "$count" = 1 ] || continue
+    case " $live_ids " in
+      *" $id "*) ;;
+      *) live_ids="$live_ids $id" ;;
+    esac
+  done
+  # shellcheck disable=SC2086
+  set -- $live_ids
+  [ "$#" -ne 0 ] || return 2
+  [ "$#" -eq 1 ] || return 1
+  id=$1
+  live=$(printf '%s' "$list" | jq -er --arg id "$id" '
+    [.result.workspaces[]? | select(.workspace_id == $id)]
+    | if length == 1 and (.[0].label | type) == "string" then .[0].label else empty end
+  ' 2>/dev/null) || return 1
+  # shellcheck disable=SC2034  # projection resolution reads the live snapshot
+  FM_BACKEND_HERDR_BOUND_PARENT_LABEL=$live
+  printf '%s' "$id"
+}
+
 fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship>]
-  local session=$1 cwd=$2 relationship=${3:-launcher-home} wsid out label matches count status
+  local session=$1 cwd=$2 relationship=${3:-launcher-home} wsid out label matches count status list bound_status
   FM_BACKEND_HERDR_WS_ID=""
   FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
   if [ "$relationship" = launcher-home ]; then
@@ -1986,13 +2094,35 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
     esac
   fi
   label=$(fm_backend_herdr_workspace_label)
-  matches=$(fm_backend_herdr_workspace_find_all "$session")
-  count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
-  if [ "$count" -gt 1 ]; then
-    echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and this spawn has no herdr parent pane to identify which one is its own; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
+  list=$(fm_backend_herdr_workspace_inventory "$session") || {
+    echo "error: herdr workspace list for session '$session' is unreadable or does not prove a unique workspace inventory; refusing to create a workspace labeled '$label'" >&2
     return 3
-  fi
-  wsid=${matches%%$'\n'*}
+  }
+  # The proven parent is consulted before the role label. A workspace that
+  # still carries the role name does not override a renamed home workspace,
+  # and disagreeing parent records do not fall through to that label or to create.
+  bound_status=0
+  wsid=$(fm_backend_herdr_bound_parent_id "$session" "$list") || bound_status=$?
+  case "$bound_status" in
+    0) ;;
+    2)
+      matches=$(printf '%s' "$list" | jq -r --arg want "$label" \
+        '.result.workspaces[]? | select(.label == $want) | .workspace_id') || {
+        echo "error: herdr workspace list for session '$session' is unreadable or does not prove a unique workspace inventory; refusing to create a workspace labeled '$label'" >&2
+        return 3
+      }
+      count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
+      if [ "$count" -gt 1 ]; then
+        echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and this spawn has no herdr parent pane to identify which one is its own; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
+        return 3
+      fi
+      wsid=${matches%%$'\n'*}
+      ;;
+    *)
+      echo "error: herdr home label '$label' matches no workspace in session '$session', and this home's recorded parent workspaces do not agree on one live workspace; refusing to create another workspace labeled '$label'" >&2
+      return 3
+      ;;
+  esac
   if [ -n "$wsid" ]; then
     FM_BACKEND_HERDR_WS_ID=$wsid
     printf '%s' "$wsid"
@@ -2700,11 +2830,31 @@ fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-p
 }
 
 # fm_backend_herdr_projection_parent_workspace_exact: resolve one exact parent
-# workspace only when its presentation label is unique in the named session.
+# workspace. Prints "<workspace-id>\t<live-label>".
+# A parent proven by this home's validated journals wins, including when
+# another workspace still carries <parent-label>. The role label is the
+# fallback only when no proven parent is recorded, and only when it matches
+# exactly one workspace. Disagreeing parent records and an unreadable
+# inventory refuse. The printed label is the workspace's current label, which
+# can differ from <parent-label> after a rename. A label is never enough to
+# create a parent.
 fm_backend_herdr_projection_parent_workspace_exact() {  # <session> <parent-label>
-  local session=$1 parent_label=$2 list
-  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 1
-  printf '%s' "$list" | jq -er --arg parent_label "$parent_label" '
+  local session=$1 parent_label=$2 list id live status
+  list=$(fm_backend_herdr_workspace_inventory "$session") || return 1
+  status=0
+  id=$(fm_backend_herdr_bound_parent_id "$session" "$list") || status=$?
+  case "$status" in
+    0)
+      live=$(printf '%s' "$list" | jq -er --arg id "$id" '
+        [.result.workspaces[]? | select(.workspace_id == $id)]
+        | if length == 1 and (.[0].label | type) == "string" then .[0].label else empty end
+      ' 2>/dev/null) || return 1
+      printf '%s\t%s' "$id" "$live"
+      return 0
+      ;;
+    1) return 1 ;;
+  esac
+  id=$(printf '%s' "$list" | jq -er --arg parent_label "$parent_label" '
     (.result.workspaces // null) as $spaces
     | select(($spaces | type) == "array")
     | [$spaces[]? | select(.label == $parent_label)]
@@ -2714,7 +2864,9 @@ fm_backend_herdr_projection_parent_workspace_exact() {  # <session> <parent-labe
       then .[0].workspace_id
       else empty
       end
-  ' 2>/dev/null
+  ' 2>/dev/null) || return 1
+  [ -n "$id" ] || return 1
+  printf '%s\t%s' "$id" "$parent_label"
 }
 
 # fm_backend_herdr_projection_live_binding_matches: verify one exact projected

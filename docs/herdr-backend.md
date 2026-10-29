@@ -150,6 +150,15 @@ Two workspaces sharing it are an unresolvable placement and refuse rather than a
 Avoid naming a personal workspace `firstmate` or `2ndmate-<id>` for that reason.
 Also avoid it because the adapter cannot distinguish that label collision from its own container.
 
+Renaming the home workspace does not make it a different parent.
+Placement uses the parent workspace id recorded in this home's presentation journals when those journals pass the presentation binding check, the matching task metadata names the same endpoint, and the journals agree on one id that is still in the session.
+That proven id wins even when another workspace still carries the role label.
+Journals that disagree, or a workspace list that is unreadable, malformed, or contains a repeated workspace id, refuse instead of creating a workspace under the role label.
+A partial journal, or one whose endpoint does not match the task metadata, is not a placement authority and does not name the worker endpoint.
+The journal stores the workspace's current label as a snapshot.
+The id remains the placement authority.
+A home with no recorded parent still gets one workspace under the role label on first use, and only after the workspace list proves a unique inventory.
+
 An older secondmate workspace using `firstmate-<id>` is not migrated automatically.
 Rename it manually before expecting new tasks or recovery to use it.
 

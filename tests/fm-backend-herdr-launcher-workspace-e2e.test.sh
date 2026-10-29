@@ -443,6 +443,56 @@ lab pane get "$UNIQB_PANE" >/dev/null 2>&1 || fail "teardown closed an unrelated
 [ "$(label_of_workspace "$WS_PRIMARY_DUP")" = firstmate ] || fail "teardown removed or renamed the launcher's workspace"
 pass "real herdr E2E: teardown closes only the worker's own pane and leaves the launcher, its workspace, and the same-labeled sibling intact"
 
+# --- 9. a renamed home workspace stays the parent by id ---------------------
+# The role label is not an identity. After every workspace labeled firstmate
+# is renamed, a presentation home with one recorded parent must project the
+# next worker under that same workspace and must not mint a new firstmate one.
+
+REN_HOME="$TMP_ROOT/renamed-home"
+mkdir -p "$REN_HOME/state" "$REN_HOME/config" "$REN_HOME/data/renA" "$REN_HOME/data/renB"
+: > "$REN_HOME/config/herdr-presentation-spaces"
+write_ship_brief "$REN_HOME/data/renA/brief.md" renA
+write_ship_brief "$REN_HOME/data/renB/brief.md" renB
+read -r WS_REN _ LAUNCH_REN_PANE <<EOF
+$(make_workspace firstmate)
+EOF
+[ -n "$WS_REN" ] && [ -n "$LAUNCH_REN_PANE" ] || fail "could not create the workspace that will be renamed"
+spawn_from_launcher "$LAUNCH_REN_PANE" "$REN_HOME" renA "$PROJ" --mode no-mistakes --yolo off
+[ "$SPAWN_RC" -eq 0 ] || fail "the spawn that records the parent before rename failed"$'\n'"$(cat "$SPAWN_ERR")"
+record_worktree "$REN_HOME/state/renA.meta"
+[ "$(journal_field "$REN_HOME/state/renA.herdr-presentation" parent_workspace_id)" = "$WS_REN" ] \
+  || fail "renA did not record the workspace that will be renamed"
+while IFS= read -r old_id; do
+  [ -n "$old_id" ] || continue
+  if [ "$old_id" = "$WS_REN" ]; then
+    lab workspace rename "$old_id" "rebate dev" >/dev/null
+  else
+    lab workspace rename "$old_id" "kept-$old_id" >/dev/null
+  fi
+done <<EOF
+$(lab workspace list | jq -r '.result.workspaces[]? | select(.label == "firstmate") | .workspace_id')
+EOF
+[ "$(label_of_workspace "$WS_REN")" = "rebate dev" ] || fail "the recorded parent did not rename"
+ROLE_LEFT=$(lab workspace list | jq -r '[.result.workspaces[]? | select(.label == "firstmate")] | length')
+[ "$ROLE_LEFT" = 0 ] || fail "a workspace labeled firstmate remained before the no-launcher spawn"
+spawn_from_launcher "" "$REN_HOME" renB "$PROJ" --mode no-mistakes --yolo off
+[ "$SPAWN_RC" -eq 0 ] || fail "a spawn after the parent rename minted or refused"$'\n'"$(cat "$SPAWN_ERR")"
+record_worktree "$REN_HOME/state/renB.meta"
+RENB_PANE=$(grep '^herdr_pane_id=' "$REN_HOME/state/renB.meta" | cut -d= -f2-)
+RENB_WS=$(workspace_of_pane "$RENB_PANE")
+[ "$(journal_field "$REN_HOME/state/renB.herdr-presentation" parent_workspace_id)" = "$WS_REN" ] \
+  || fail "the post-rename worker did not stay under the recorded parent $WS_REN"
+[ "$(journal_field "$REN_HOME/state/renB.herdr-presentation" parent_label)" = "rebate dev" ] \
+  || fail "the post-rename journal did not snapshot the live parent label"
+case "$(label_of_workspace "$RENB_WS")" in
+  "└ renB · p:"*) : ;;
+  *) fail "the post-rename worker is not a task projection: '$(label_of_workspace "$RENB_WS")'" ;;
+esac
+ROLE_AFTER=$(lab workspace list | jq -r '[.result.workspaces[]? | select(.label == "firstmate")] | length')
+[ "$ROLE_AFTER" = 0 ] || fail "the post-rename spawn created a workspace labeled firstmate"
+[ "$(focused_workspace)" = "$WS_OTHER" ] || fail "the post-rename spawn stole focus"
+pass "real herdr E2E: after the home workspace is renamed, the next worker stays under that workspace id and no role-labeled workspace is created"
+
 if ! cleanup_all; then
   trap - EXIT
   printf 'not ok - isolated Herdr lab teardown failed or the default fleet session changed\n' >&2

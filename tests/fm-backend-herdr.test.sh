@@ -1154,6 +1154,338 @@ test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher() {
   pass "fm_backend_herdr_workspace_ensure: refuses to guess between two same-labeled home workspaces"
 }
 
+test_workspace_ensure_adopts_a_renamed_parent_by_id() {
+  local dir log resp fb out home canon journal
+  dir="$TMP_ROOT/ensure-renamed"; mkdir -p "$dir/responses" "$dir/home/state"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$dir/home"
+  canon=$(cd "$home" && pwd -P)
+  journal="$home/state/task-r.herdr-presentation"
+  cat > "$journal" <<EOF
+version=2
+task_id=task-r
+projection_id=aaaaaaaaaaaaaaaaaaaaaa
+home=$canon
+session=fmtest
+workspace_id=wChild
+tab_id=wChild:t2
+pane_id=wChild:p2
+parent_workspace_id=wF
+parent_label=firstmate
+workspace_label=└ task-r · p:aaaaaaaaaaaaaaaaaaaaaa
+task_label=fm-task-r
+EOF
+  cat > "$home/state/task-r.meta" <<EOF
+backend=herdr
+herdr_session=fmtest
+herdr_workspace_id=wChild
+herdr_tab_id=wChild:t2
+herdr_pane_id=wChild:p2
+EOF
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wF","label":"rebate dev"}]}}' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HOME="$home" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT")
+  [ "$out" = wF ] || fail "a renamed parent workspace should be adopted by its recorded id, got '$out'"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "a recorded parent id must not mint a new workspace labeled firstmate"
+  pass "fm_backend_herdr_workspace_ensure: adopts the recorded parent after its label changes, and does not mint the role label"
+}
+
+test_workspace_ensure_refuses_disagreeing_renamed_parents() {
+  local dir log resp fb out home canon status
+  dir="$TMP_ROOT/ensure-renamed-split"; mkdir -p "$dir/responses" "$dir/home/state"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$dir/home"
+  canon=$(cd "$home" && pwd -P)
+  for parent in wF wG; do
+    cat > "$home/state/task-$parent.herdr-presentation" <<EOF
+version=2
+task_id=task-$parent
+projection_id=bbbbbbbbbbbbbbbbbbbbbb
+home=$canon
+session=fmtest
+workspace_id=wChild$parent
+tab_id=wChild$parent:t2
+pane_id=wChild$parent:p2
+parent_workspace_id=$parent
+parent_label=firstmate
+workspace_label=└ task-$parent · p:bbbbbbbbbbbbbbbbbbbbbb
+task_label=fm-task-$parent
+EOF
+    cat > "$home/state/task-$parent.meta" <<EOF
+backend=herdr
+herdr_session=fmtest
+herdr_workspace_id=wChild$parent
+herdr_tab_id=wChild$parent:t2
+herdr_pane_id=wChild$parent:p2
+EOF
+  done
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wF","label":"rebate dev"},{"workspace_id":"wG","label":"other dev"}]}}' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HOME="$home" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT" 2>&1)
+  status=$?
+  expect_code 3 "$status" "two live recorded parents must refuse instead of minting a role-labeled workspace"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "an ambiguous recorded parent must not mint a workspace"
+  pass "fm_backend_herdr_workspace_ensure: refuses when renamed-parent journals disagree, and does not mint the role label"
+}
+
+test_workspace_ensure_prefers_a_proven_parent_over_a_role_label() {
+  local dir log resp fb out home canon
+  dir="$TMP_ROOT/ensure-renamed-collision"; mkdir -p "$dir/responses" "$dir/home/state"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$dir/home"
+  canon=$(cd "$home" && pwd -P)
+  cat > "$home/state/task-r.herdr-presentation" <<EOF
+version=2
+task_id=task-r
+projection_id=aaaaaaaaaaaaaaaaaaaaaa
+home=$canon
+session=fmtest
+workspace_id=wChild
+tab_id=wChild:t2
+pane_id=wChild:p2
+parent_workspace_id=wF
+parent_label=firstmate
+workspace_label=└ task-r · p:aaaaaaaaaaaaaaaaaaaaaa
+task_label=fm-task-r
+EOF
+  cat > "$home/state/task-r.meta" <<EOF
+backend=herdr
+herdr_session=fmtest
+herdr_workspace_id=wChild
+herdr_tab_id=wChild:t2
+herdr_pane_id=wChild:p2
+EOF
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wF","label":"rebate dev"},{"workspace_id":"wX","label":"firstmate"}]}}' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HOME="$home" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT")
+  [ "$out" = wF ] || fail "a proven parent must win over an unrelated role-labeled workspace, got '$out'"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "a role-labeled collision must not mint another workspace"
+  pass "fm_backend_herdr_workspace_ensure: a proven renamed parent wins over a different workspace labeled firstmate"
+}
+
+test_workspace_ensure_refuses_a_role_label_when_parents_disagree() {
+  local dir log resp fb out home canon status
+  dir="$TMP_ROOT/ensure-renamed-conflict"; mkdir -p "$dir/responses" "$dir/home/state"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$dir/home"
+  canon=$(cd "$home" && pwd -P)
+  for parent in wF wG; do
+    cat > "$home/state/task-$parent.herdr-presentation" <<EOF
+version=2
+task_id=task-$parent
+projection_id=bbbbbbbbbbbbbbbbbbbbbb
+home=$canon
+session=fmtest
+workspace_id=wChild$parent
+tab_id=wChild$parent:t2
+pane_id=wChild$parent:p2
+parent_workspace_id=$parent
+parent_label=firstmate
+workspace_label=└ task-$parent · p:bbbbbbbbbbbbbbbbbbbbbb
+task_label=fm-task-$parent
+EOF
+    cat > "$home/state/task-$parent.meta" <<EOF
+backend=herdr
+herdr_session=fmtest
+herdr_workspace_id=wChild$parent
+herdr_tab_id=wChild$parent:t2
+herdr_pane_id=wChild$parent:p2
+EOF
+  done
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"wF","label":"rebate dev"},{"workspace_id":"wG","label":"other dev"}]}}' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HOME="$home" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT" 2>&1)
+  status=$?
+  expect_code 3 "$status" "disagreeing proven parents must refuse even when a role label is unique"
+  [ "$out" = w1 ] && fail "a role label must not rescue disagreeing parent records"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "disagreeing parent records must not mint a workspace"
+  pass "fm_backend_herdr_workspace_ensure: disagreeing proven parents refuse instead of adopting the role label"
+}
+
+test_workspace_ensure_ignores_a_partial_journal() {
+  local dir log resp fb out home canon
+  dir="$TMP_ROOT/ensure-partial-journal"; mkdir -p "$dir/responses" "$dir/home/state"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$dir/home"
+  canon=$(cd "$home" && pwd -P)
+  cat > "$home/state/task-r.herdr-presentation" <<EOF
+version=2
+task_id=task-r
+projection_id=aaaaaaaaaaaaaaaaaaaaaa
+home=$canon
+session=fmtest
+parent_workspace_id=wF
+EOF
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"wF","label":"rebate dev"}]}}' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HOME="$home" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT")
+  [ "$out" = w1 ] || fail "a partial journal must not choose the parent, got '$out'"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "the ordinary role label is still the fallback when no journal is valid"
+  pass "fm_backend_herdr_workspace_ensure: a partial presentation journal is not placement authority"
+}
+
+test_workspace_ensure_ignores_a_journal_whose_metadata_disagrees() {
+  local dir log resp fb out home canon
+  dir="$TMP_ROOT/ensure-stale-journal"; mkdir -p "$dir/responses" "$dir/home/state"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$dir/home"
+  canon=$(cd "$home" && pwd -P)
+  cat > "$home/state/task-r.herdr-presentation" <<EOF
+version=2
+task_id=task-r
+projection_id=aaaaaaaaaaaaaaaaaaaaaa
+home=$canon
+session=fmtest
+workspace_id=wChild
+tab_id=wChild:t2
+pane_id=wChild:p2
+parent_workspace_id=wF
+parent_label=firstmate
+workspace_label=└ task-r · p:aaaaaaaaaaaaaaaaaaaaaa
+task_label=fm-task-r
+EOF
+  cat > "$home/state/task-r.meta" <<EOF
+backend=herdr
+herdr_session=fmtest
+herdr_workspace_id=wOther
+herdr_tab_id=wChild:t2
+herdr_pane_id=wChild:p2
+EOF
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"wF","label":"rebate dev"},{"workspace_id":"wChild","label":"└ task-r · p:aaaaaaaaaaaaaaaaaaaaaa"}]}}' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HOME="$home" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT")
+  [ "$out" = w1 ] || fail "metadata that disagrees must not make the journal the parent, got '$out'"
+  [ "$out" != wChild ] || fail "a presentation journal must not become the worker endpoint"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "a stale journal must not mint a workspace while the role label still identifies one"
+  pass "fm_backend_herdr_workspace_ensure: a journal whose task metadata disagrees is not placement authority"
+}
+
+test_workspace_ensure_refuses_an_unreadable_workspace_list() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/ensure-list-fail"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '1\n' > "$resp/1.exit"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT" 2>&1)
+  status=$?
+  expect_code 3 "$status" "a failed workspace list must refuse"
+  assert_contains "$out" "unique workspace inventory" "the list failure did not explain the refusal"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "a failed workspace list must not mint a workspace"
+  pass "fm_backend_herdr_workspace_ensure: a failed workspace list refuses instead of creating the role label"
+}
+
+test_workspace_ensure_refuses_a_malformed_workspace_list() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/ensure-list-badjson"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '%s\n' '{' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT" 2>&1)
+  status=$?
+  expect_code 3 "$status" "invalid workspace-list JSON must refuse"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "invalid workspace-list JSON must not mint a workspace"
+  pass "fm_backend_herdr_workspace_ensure: invalid workspace-list JSON refuses instead of creating the role label"
+}
+
+test_workspace_ensure_refuses_a_workspace_list_without_an_inventory() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/ensure-list-schema"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '%s\n' '{"ok":true}' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT" 2>&1)
+  status=$?
+  expect_code 3 "$status" "a workspace list without a workspace array must refuse"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "a schema-invalid workspace list must not mint a workspace"
+  pass "fm_backend_herdr_workspace_ensure: a workspace list without an inventory refuses instead of creating the role label"
+}
+
+test_workspace_ensure_refuses_duplicate_workspace_ids() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/ensure-list-dup"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wF","label":"rebate dev"},{"workspace_id":"wF","label":"firstmate"}]}}' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp' "$ROOT" 2>&1)
+  status=$?
+  expect_code 3 "$status" "duplicate workspace ids must refuse"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' \
+    "a repeated workspace id must not mint a workspace"
+  pass "fm_backend_herdr_workspace_ensure: duplicate workspace ids refuse instead of creating the role label"
+}
+
+test_projection_parent_prefers_a_proven_parent_over_a_role_label() {
+  local dir log resp fb out home canon
+  dir="$TMP_ROOT/project-parent-collision"; mkdir -p "$dir/responses" "$dir/home/state"
+  log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$dir/home"
+  canon=$(cd "$home" && pwd -P)
+  cat > "$home/state/task-r.herdr-presentation" <<EOF
+version=2
+task_id=task-r
+projection_id=aaaaaaaaaaaaaaaaaaaaaa
+home=$canon
+session=fmtest
+workspace_id=wChild
+tab_id=wChild:t2
+pane_id=wChild:p2
+parent_workspace_id=wF
+parent_label=firstmate
+workspace_label=└ task-r · p:aaaaaaaaaaaaaaaaaaaaaa
+task_label=fm-task-r
+EOF
+  cat > "$home/state/task-r.meta" <<EOF
+backend=herdr
+herdr_session=fmtest
+herdr_workspace_id=wChild
+herdr_tab_id=wChild:t2
+herdr_pane_id=wChild:p2
+EOF
+  printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wF","label":"rebate dev"},{"workspace_id":"wX","label":"firstmate"}]}}' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  # shellcheck disable=SC2016 # $0 is the child bash program path, not this script
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HOME="$home" HERDR_SESSION=fmtest \
+    env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_parent_workspace_exact fmtest firstmate' "$ROOT")
+  [ "$out" = $'wF\trebate dev' ] || fail "projection parent resolution must prefer the proven parent, got '$out'"
+  pass "fm_backend_herdr_projection_parent_workspace_exact: a proven renamed parent wins over a unique role label"
+}
+
 test_workspace_ensure_other_home_ignores_the_launcher_identity() {
   local dir log resp fb out
   dir="$TMP_ROOT/ensure-other-home"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -5921,6 +6253,17 @@ test_launcher_identity_refuses_a_pane_and_tab_that_disagree
 test_launcher_identity_refuses_a_workspace_missing_from_the_session
 test_workspace_ensure_prefers_the_launcher_over_the_first_label_match
 test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher
+test_workspace_ensure_adopts_a_renamed_parent_by_id
+test_workspace_ensure_refuses_disagreeing_renamed_parents
+test_workspace_ensure_prefers_a_proven_parent_over_a_role_label
+test_workspace_ensure_refuses_a_role_label_when_parents_disagree
+test_workspace_ensure_ignores_a_partial_journal
+test_workspace_ensure_ignores_a_journal_whose_metadata_disagrees
+test_workspace_ensure_refuses_an_unreadable_workspace_list
+test_workspace_ensure_refuses_a_malformed_workspace_list
+test_workspace_ensure_refuses_a_workspace_list_without_an_inventory
+test_workspace_ensure_refuses_duplicate_workspace_ids
+test_projection_parent_prefers_a_proven_parent_over_a_role_label
 test_workspace_ensure_other_home_ignores_the_launcher_identity
 test_container_ensure_refuses_an_ambiguous_home_label
 test_container_ensure_starts_server_and_workspace
