@@ -1124,6 +1124,9 @@ test_launcher_identity_refuses_a_workspace_missing_from_the_session() {
 # --- workspace_ensure placement ---------------------------------------------
 
 test_workspace_ensure_prefers_the_launcher_over_the_first_label_match() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out
   dir="$TMP_ROOT/ensure-launcher"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '{"sessions":[{"name":"fmtest","running":true,"socket_path":"/tmp/fm-herdr-unit/fmtest.sock"}]}\n' > "$resp/1.out"
@@ -1140,6 +1143,9 @@ test_workspace_ensure_prefers_the_launcher_over_the_first_label_match() {
 }
 
 test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out status
   dir="$TMP_ROOT/ensure-ambiguous"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w7","label":"firstmate"}]}}\n' > "$resp/1.out"
@@ -1155,6 +1161,9 @@ test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher() {
 }
 
 test_workspace_ensure_adopts_a_renamed_parent_by_id() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out home canon journal
   dir="$TMP_ROOT/ensure-renamed"; mkdir -p "$dir/responses" "$dir/home/state"
   log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -1195,6 +1204,9 @@ EOF
 }
 
 test_workspace_ensure_refuses_disagreeing_renamed_parents() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out home canon status
   dir="$TMP_ROOT/ensure-renamed-split"; mkdir -p "$dir/responses" "$dir/home/state"
   log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -1237,6 +1249,9 @@ EOF
 }
 
 test_workspace_ensure_prefers_a_proven_parent_over_a_role_label() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out home canon
   dir="$TMP_ROOT/ensure-renamed-collision"; mkdir -p "$dir/responses" "$dir/home/state"
   log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -1276,6 +1291,9 @@ EOF
 }
 
 test_workspace_ensure_refuses_a_role_label_when_parents_disagree() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out home canon status
   dir="$TMP_ROOT/ensure-renamed-conflict"; mkdir -p "$dir/responses" "$dir/home/state"
   log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -1319,6 +1337,9 @@ EOF
 }
 
 test_workspace_ensure_ignores_a_partial_journal() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out home canon
   dir="$TMP_ROOT/ensure-partial-journal"; mkdir -p "$dir/responses" "$dir/home/state"
   log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -1345,6 +1366,9 @@ EOF
 }
 
 test_workspace_ensure_ignores_a_journal_whose_metadata_disagrees() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out home canon
   dir="$TMP_ROOT/ensure-stale-journal"; mkdir -p "$dir/responses" "$dir/home/state"
   log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -1385,6 +1409,9 @@ EOF
 }
 
 test_workspace_ensure_refuses_an_unreadable_workspace_list() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out status
   dir="$TMP_ROOT/ensure-list-fail"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '1\n' > "$resp/1.exit"
@@ -1402,6 +1429,9 @@ test_workspace_ensure_refuses_an_unreadable_workspace_list() {
 }
 
 test_workspace_ensure_refuses_a_malformed_workspace_list() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out status
   dir="$TMP_ROOT/ensure-list-badjson"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '%s\n' '{' > "$resp/1.out"
@@ -1418,6 +1448,9 @@ test_workspace_ensure_refuses_a_malformed_workspace_list() {
 }
 
 test_workspace_ensure_refuses_a_workspace_list_without_an_inventory() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out status
   dir="$TMP_ROOT/ensure-list-schema"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '%s\n' '{"ok":true}' > "$resp/1.out"
@@ -1434,6 +1467,9 @@ test_workspace_ensure_refuses_a_workspace_list_without_an_inventory() {
 }
 
 test_workspace_ensure_refuses_duplicate_workspace_ids() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out status
   dir="$TMP_ROOT/ensure-list-dup"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"wF","label":"rebate dev"},{"workspace_id":"wF","label":"firstmate"}]}}' > "$resp/1.out"
@@ -1450,6 +1486,9 @@ test_workspace_ensure_refuses_duplicate_workspace_ids() {
 }
 
 test_projection_parent_prefers_a_proven_parent_over_a_role_label() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out home canon
   dir="$TMP_ROOT/project-parent-collision"; mkdir -p "$dir/responses" "$dir/home/state"
   log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -1487,6 +1526,9 @@ EOF
 }
 
 test_workspace_ensure_other_home_ignores_the_launcher_identity() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out
   dir="$TMP_ROOT/ensure-other-home"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   # Only a workspace list: the launcher's own pane is never consulted, because a
@@ -1502,6 +1544,9 @@ test_workspace_ensure_other_home_ignores_the_launcher_identity() {
 }
 
 test_container_ensure_refuses_an_ambiguous_home_label() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out status
   dir="$TMP_ROOT/container-ambiguous"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w7","label":"firstmate"}]}}\n' > "$resp/1.out"
@@ -1518,6 +1563,9 @@ test_container_ensure_refuses_an_ambiguous_home_label() {
 # --- container_ensure / create_task ------------------------------------------
 
 test_container_ensure_starts_server_and_workspace() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out
   dir="$TMP_ROOT/container"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   # 1: version_check status --json (server not running yet, irrelevant to client check)
@@ -1564,6 +1612,9 @@ test_server_ensure_scrubs_home_and_harness_identity() {
 }
 
 test_container_ensure_reuses_existing_workspace() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out
   dir="$TMP_ROOT/container-reuse"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '{"client":{"version":"0.7.1","protocol":14}}\n' > "$resp/1.out"
@@ -1828,6 +1879,9 @@ test_create_task_creates_and_parses_ids() {
 # --- container_ensure / create_task: --no-focus and per-home label ----------
 
 test_container_ensure_creates_with_no_focus_flag() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out
   dir="$TMP_ROOT/container-no-focus"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   printf '{"client":{"version":"0.7.1","protocol":14}}\n' > "$resp/1.out"
@@ -1844,6 +1898,9 @@ test_container_ensure_creates_with_no_focus_flag() {
 }
 
 test_container_ensure_uses_secondmate_home_label() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log resp fb out home
   dir="$TMP_ROOT/container-secondmate-label"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
   home="$TMP_ROOT/container-secondmate-home"; mkdir -p "$home"; printf 'sshhip-h7\n' > "$home/.fm-secondmate-home"
@@ -3805,6 +3862,9 @@ SH
 }
 
 test_projection_reclaim_refusal_matrix_is_non_mutating() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir state home other_home home_real journal legacy token label out mutation_log
   dir="$TMP_ROOT/projection-reclaim-refusals"; state="$dir/state"; home="$dir/home"; other_home="$dir/other-home"
   mkdir -p "$state" "$home" "$other_home"
@@ -3829,6 +3889,7 @@ test_projection_reclaim_refusal_matrix_is_non_mutating() {
     bash -c '
       . "$ROOT/bin/backends/herdr.sh"
       fm_backend_herdr_cli() { printf "%s\n" "$*" >> "$MUTATIONS"; return 1; }
+      fm_backend_herdr_projection_parent_workspace_exact() { printf "w1\tfirstmate"; }
       run_case() {
         mode=$1; journal=$2; home=$3
         fm_backend_herdr_projection_live_binding_matches() {
@@ -3847,7 +3908,7 @@ test_projection_reclaim_refusal_matrix_is_non_mutating() {
         }
         set +e
         fm_backend_herdr_projection_reclaim_task \
-          fmtest "$journal" refusal-r1 "$home" w2 w2:t2 w2:p2 firstmate fm-refusal-r1 /tmp/project \
+          fmtest "$journal" refusal-r1 "$home" w2 w2:t2 w2:p2 fm-refusal-r1 /tmp/project \
           >/dev/null 2>&1
         rc=$?
         set -e
@@ -3870,7 +3931,7 @@ test_projection_reclaim_refusal_matrix_is_non_mutating() {
 }
 
 test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
-  local dir state home home_real log resp fb journal token label out calls create_line close_line agent_line boundary_mutations
+  local dir state home home_real log resp fb journal token label out calls create_line close_line agent_line boundary_mutations n suffix
   dir="$TMP_ROOT/projection-reclaim-exact"; state="$dir/state"; home="$dir/home"
   mkdir -p "$dir/responses" "$state" "$home"
   home_real=$(cd "$home" && pwd -P)
@@ -3916,12 +3977,18 @@ test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
   cp "$resp/1.out" "$resp/26.out"
   printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t3","label":"fm-fm-hibit-r1"}]}}' > "$resp/27.out"
   printf '%s\n' '{"result":{"panes":[{"pane_id":"w2:p3","tab_id":"w2:t3"}]}}' > "$resp/28.out"
+  for ((n = 28; n >= 1; n--)); do
+    for suffix in out exit; do
+      [ ! -f "$resp/$n.$suffix" ] || mv "$resp/$n.$suffix" "$resp/$((n + 1)).$suffix"
+    done
+  done
+  cp "$resp/2.out" "$resp/1.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
     bash -c '
       . "$0/bin/backends/herdr.sh"
       fm_backend_herdr_projection_reclaim_task \
-        fmtest "$1" fm-hibit-r1 "$2" w2 w2:t2 w2:p2 firstmate fm-fm-hibit-r1 /tmp/project || exit 1
+        fmtest "$1" fm-hibit-r1 "$2" w2 w2:t2 w2:p2 fm-fm-hibit-r1 /tmp/project || exit 1
       printf "%s %s" "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" "$FM_BACKEND_HERDR_PROJECTION_PANE_ID"
     ' "$ROOT" "$journal" "$home") || fail "exact agent-free projection reclaim failed"
   [ "$out" = "w2:t3 w2:p3" ] || fail "reclaim did not return exact replacement ids: $out"
@@ -5692,6 +5759,9 @@ SH
 # --- workspace lifecycle: reuse, no orphans, default-tab pruning -------------
 
 test_workspace_ensure_prunes_default_tab() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log state fb raw container seeded wsid ids pane tabcount
   dir="$TMP_ROOT/prune-default"; mkdir -p "$dir"; log="$dir/log"; state="$dir/state.json"; : > "$log"
   fb=$(make_herdr_statefake "$dir")
@@ -5726,6 +5796,9 @@ EOF
 }
 
 test_repeated_cycles_reuse_one_workspace_no_orphans() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   local dir log state fb i raw container seeded wsid ids pane first_ws="" wscount total tabcount created
   dir="$TMP_ROOT/cycles"; mkdir -p "$dir"; log="$dir/log"; state="$dir/state.json"; : > "$log"
   fb=$(make_herdr_statefake "$dir")
@@ -5790,6 +5863,9 @@ EOF
 # leaves the live tab alone.
 
 test_adopted_workspace_never_prunes_default_tab() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   # An ADOPTED workspace (fm_backend_herdr_workspace_find matched a
   # pre-existing workspace by label) must never have any tab pruned by
   # create_task, regardless of that tab's label or count - the created-vs-
@@ -5829,6 +5905,9 @@ EOF
 }
 
 test_label_collision_startup_workspace_leaves_live_tab_alone() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   # The exact live-fire incident shape (2026-07-02): a captain launches herdr
   # directly inside a directory named "firstmate", so herdr auto-derives that
   # workspace's DISPLAYED label from the cwd basename - "firstmate" - byte-
@@ -5869,6 +5948,9 @@ EOF
 }
 
 test_prune_refuses_a_working_agent_pane_defense_in_depth() {
+  local FM_HOME="$TMP_ROOT/${FUNCNAME[0]}-home"
+  export FM_HOME
+  mkdir -p "$FM_HOME"
   # Defense in depth (not the primary safety mechanism): even for a
   # freshly-created workspace with a genuine non-empty seeded default tab id,
   # if that specific pane's agent reports "working" by the time create_task

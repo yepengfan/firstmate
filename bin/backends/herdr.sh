@@ -1843,6 +1843,7 @@ fm_backend_herdr_launcher_identity() {  # <session>
   # shellcheck disable=SC2034  # callers consume the verified binding's parts
   FM_BACKEND_HERDR_LAUNCHER_TAB_ID=$tab
   FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=$workspace
+  FM_BACKEND_HERDR_LAUNCHER_INVENTORY=$list
   # The id above is the placement authority. The label is the current snapshot
   # only, so a renamed parent still binds and is not treated as a different home.
   # shellcheck disable=SC2034  # fm-spawn copies this into the presentation journal
@@ -2000,25 +2001,25 @@ fm_backend_herdr_workspace_inventory() {  # <session>
   printf '%s' "$list"
 }
 
-# fm_backend_herdr_bound_parent_id: the one parent workspace id this home's
-# validated version 2 presentation journals agree on, when that id is still
-# present exactly once in <workspace-list-json>.
-# A journal counts only after fm_backend_herdr_projection_journal_snapshot
-# accepts it and the matching task metadata names the same session, workspace,
-# tab, and pane. A partial journal, a symlink, or metadata that disagrees is
-# not placement authority and is ignored. The child workspace id in the
-# journal is never returned. Prints the parent id.
-# Returns 2 when no accepted journal names a live parent, and 1 when the
-# accepted journals disagree, a parent id is malformed, or the list cannot
-# prove a single live match. Labels are not consulted.
 fm_backend_herdr_bound_parent_id() {  # <session> <workspace-list-json>
   local session=$1 list=$2 home state journal journal_session journal_home parent
-  local found=" " id count live_ids="" live base task_id meta
+  local id="" count base task_id meta binding key
   local meta_session meta_workspace meta_tab meta_pane
   [ -n "${FM_HOME:-}" ] || return 2
   home=$(fm_backend_herdr_projection_home_identity "$FM_HOME" 2>/dev/null) || return 2
   state="${FM_HOME%/}/state"
-  [ -d "$state" ] && [ ! -L "$state" ] || return 2
+  [ ! -L "$state" ] || return 1
+  [ -d "$state" ] || return 2
+  key=$(printf '%s' "$session" | jq -sRr @uri) || return 1
+  binding="$state/herdr-parent-$key.json"
+  if [ -e "$binding" ] || [ -L "$binding" ]; then
+    [ -f "$binding" ] && [ ! -L "$binding" ] || return 1
+    parent=$(jq -er --arg home "$home" --arg session "$session" '
+      select(.version == 1 and .home == $home and .session == $session)
+      | .parent_workspace_id | select(type == "string" and test("^[A-Za-z0-9:_-]+$"))
+    ' "$binding") || return 1
+    id=$parent
+  fi
   for journal in "$state"/*.herdr-presentation; do
     [ -f "$journal" ] && [ ! -L "$journal" ] || continue
     base=$(basename "$journal")
@@ -2048,33 +2049,50 @@ fm_backend_herdr_bound_parent_id() {  # <session> <workspace-list-json>
     [ "$meta_workspace" = "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" ] || continue
     [ "$meta_tab" = "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" ] || continue
     [ "$meta_pane" = "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" ] || continue
-    case "$found" in
-      *" $parent "*) ;;
-      *) found="$found$parent " ;;
-    esac
+    [ -z "$id" ] || [ "$id" = "$parent" ] || return 1
+    id=$parent
   done
-  [ "$found" != " " ] || return 2
-  for id in $found; do
-    count=$(printf '%s' "$list" | jq -r --arg id "$id" \
-      '[.result.workspaces[]? | select(.workspace_id == $id)] | length' 2>/dev/null) || return 1
-    [ "$count" = 1 ] || continue
-    case " $live_ids " in
-      *" $id "*) ;;
-      *) live_ids="$live_ids $id" ;;
-    esac
-  done
-  # shellcheck disable=SC2086
-  set -- $live_ids
-  [ "$#" -ne 0 ] || return 2
-  [ "$#" -eq 1 ] || return 1
-  id=$1
-  live=$(printf '%s' "$list" | jq -er --arg id "$id" '
-    [.result.workspaces[]? | select(.workspace_id == $id)]
-    | if length == 1 and (.[0].label | type) == "string" then .[0].label else empty end
-  ' 2>/dev/null) || return 1
-  # shellcheck disable=SC2034  # projection resolution reads the live snapshot
-  FM_BACKEND_HERDR_BOUND_PARENT_LABEL=$live
+  [ -n "$id" ] || return 2
+  count=$(printf '%s' "$list" | jq -r --arg id "$id" \
+    '[.result.workspaces[]? | select(.workspace_id == $id and (.label | type) == "string")] | length') || return 1
+  [ "$count" = 1 ] || return 1
   printf '%s' "$id"
+}
+
+fm_backend_herdr_parent_bind() {
+  local session=$1 parent=$2 list=$3 home state key binding existing status tmp
+  [ -n "${FM_HOME:-}" ] || return 1
+  case "$parent" in ''|*[!A-Za-z0-9:_-]*) return 1 ;; esac
+  home=$(fm_backend_herdr_projection_home_identity "$FM_HOME") || return 1
+  state="${FM_HOME%/}/state"
+  [ ! -L "$state" ] || return 1
+  mkdir -p "$state" || return 1
+  status=0
+  existing=$(fm_backend_herdr_bound_parent_id "$session" "$list") || status=$?
+  case "$status" in
+    0) [ "$existing" = "$parent" ] || return 1 ;;
+    2) ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$list" | jq -e --arg id "$parent" '
+    [.result.workspaces[]? | select(.workspace_id == $id and (.label | type) == "string")] | length == 1
+  ' >/dev/null || return 1
+  key=$(printf '%s' "$session" | jq -sRr @uri) || return 1
+  binding="$state/herdr-parent-$key.json"
+  [ ! -e "$binding" ] && [ ! -L "$binding" ] || return 0
+  tmp=$(mktemp "$state/.herdr-parent.XXXXXX") || return 1
+  if ! jq -n --arg home "$home" --arg session "$session" --arg parent "$parent" \
+    '{version:1, home:$home, session:$session, parent_workspace_id:$parent}' > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ln "$tmp" "$binding" 2>/dev/null; then
+    rm -f "$tmp"
+    return 0
+  fi
+  rm -f "$tmp"
+  existing=$(fm_backend_herdr_bound_parent_id "$session" "$list") || return 1
+  [ "$existing" = "$parent" ]
 }
 
 fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship>]
@@ -2085,6 +2103,8 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
     fm_backend_herdr_launcher_identity "$session" && status=0 || status=$?
     case "$status" in
       0)
+        fm_backend_herdr_parent_bind "$session" "$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID" \
+          "$FM_BACKEND_HERDR_LAUNCHER_INVENTORY" || return 3
         FM_BACKEND_HERDR_WS_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
         printf '%s' "$FM_BACKEND_HERDR_WS_ID"
         return 0
@@ -2124,6 +2144,7 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
       ;;
   esac
   if [ -n "$wsid" ]; then
+    fm_backend_herdr_parent_bind "$session" "$wsid" "$list" || return 3
     FM_BACKEND_HERDR_WS_ID=$wsid
     printf '%s' "$wsid"
     return 0
@@ -2131,6 +2152,9 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$cwd" --label "$label" --no-focus 2>/dev/null) || return 1
   wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
   [ -n "$wsid" ] || return 1
+  list=$(printf '%s' "$list" | jq --arg id "$wsid" --arg label "$label" \
+    '.result.workspaces += [{workspace_id:$id,label:$label}]') || return 3
+  fm_backend_herdr_parent_bind "$session" "$wsid" "$list" || return 3
   FM_BACKEND_HERDR_WS_ID=$wsid
   # Herdr seeds a new workspace with one auto-created default tab firstmate
   # never uses. It is NOT pruned here: at this instant it is the workspace's
@@ -2838,35 +2862,31 @@ fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-p
 # inventory refuse. The printed label is the workspace's current label, which
 # can differ from <parent-label> after a rename. A label is never enough to
 # create a parent.
-fm_backend_herdr_projection_parent_workspace_exact() {  # <session> <parent-label>
-  local session=$1 parent_label=$2 list id live status
+fm_backend_herdr_projection_parent_workspace_exact() {  # <session> <parent-label> [<recorded-parent-id>]
+  local session=$1 parent_label=$2 recorded=${3:-} list id live status
   list=$(fm_backend_herdr_workspace_inventory "$session") || return 1
   status=0
   id=$(fm_backend_herdr_bound_parent_id "$session" "$list") || status=$?
   case "$status" in
-    0)
-      live=$(printf '%s' "$list" | jq -er --arg id "$id" '
-        [.result.workspaces[]? | select(.workspace_id == $id)]
-        | if length == 1 and (.[0].label | type) == "string" then .[0].label else empty end
-      ' 2>/dev/null) || return 1
-      printf '%s\t%s' "$id" "$live"
-      return 0
-      ;;
+    0) [ -z "$recorded" ] || [ "$id" = "$recorded" ] || return 1 ;;
     1) return 1 ;;
+    2)
+      if [ -n "$recorded" ]; then
+        id=$recorded
+      else
+        id=$(printf '%s' "$list" | jq -er --arg label "$parent_label" '
+          [.result.workspaces[] | select(.label == $label)]
+          | if length == 1 then .[0].workspace_id else empty end
+        ') || return 1
+      fi
+      ;;
   esac
-  id=$(printf '%s' "$list" | jq -er --arg parent_label "$parent_label" '
-    (.result.workspaces // null) as $spaces
-    | select(($spaces | type) == "array")
-    | [$spaces[]? | select(.label == $parent_label)]
-    | if length == 1
-        and (.[0].workspace_id | type) == "string"
-        and (.[0].workspace_id | length) > 0
-      then .[0].workspace_id
-      else empty
-      end
-  ' 2>/dev/null) || return 1
-  [ -n "$id" ] || return 1
-  printf '%s\t%s' "$id" "$parent_label"
+  live=$(printf '%s' "$list" | jq -er --arg id "$id" '
+    [.result.workspaces[] | select(.workspace_id == $id)]
+    | if length == 1 and (.[0].label | type) == "string" then .[0].label else empty end
+  ') || return 1
+  fm_backend_herdr_parent_bind "$session" "$id" "$list" || return 1
+  printf '%s\t%s' "$id" "$live"
 }
 
 # fm_backend_herdr_projection_live_binding_matches: verify one exact projected
@@ -2942,9 +2962,9 @@ fm_backend_herdr_projection_reclaim_rollback() {  # <session> <new-pane>
 # Return 0 means exact reclaim, 2 means non-mutating or exactly rolled-back
 # refusal with flat fallback permitted, and 1 means a live/unknown or
 # post-mutation uncertainty that must refuse the launch.
-fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <parent-label> <task-label> <cwd>
+fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <task-label> <cwd>
   local session=$1 journal=$2 id=$3 home=$4 meta_workspace=$5 meta_tab=$6 meta_pane=$7
-  local parent_label=$8 task_label=$9 cwd=${10} canonical_home state focus_before active_tab out new_tab new_pane info close_status
+  local parent_label task_label=$8 cwd=$9 canonical_home state focus_before active_tab out new_tab new_pane info close_status
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=""
   FM_BACKEND_HERDR_PROJECTION_PANE_ID=""
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
@@ -2961,11 +2981,15 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
      || [ "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" != "$meta_workspace" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" != "$meta_tab" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" != "$meta_pane" ] \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$parent_label" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" != "$task_label" ]; then
     echo "warning: herdr presentation binding for $id does not match its exact home, endpoint, or parent; spawning flat" >&2
     return 2
   fi
+  local parent_raw parent_id
+  parent_raw=$(FM_HOME="$home" fm_backend_herdr_projection_parent_workspace_exact "$session" "" "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID") || return 1
+  parent_id=${parent_raw%%$'\t'*}
+  [ "$parent_id" = "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" ] || return 1
+  parent_label=${parent_raw#*$'\t'}
   if ! fm_backend_herdr_projection_live_binding_matches \
     "$session" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
     "$meta_workspace" "$meta_tab" "$meta_pane" \
