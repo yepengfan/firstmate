@@ -2008,8 +2008,9 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   fi
   label=$(fm_backend_herdr_workspace_label)
   placement_status=0
-  wsid=$(fm_backend_herdr_parent_resolve_flat "$session" "$label") || placement_status=$?
+  fm_backend_herdr_parent_resolve_flat "$session" "$label" || placement_status=$?
   [ "$placement_status" -eq 0 ] || return "$placement_status"
+  wsid=${FM_BACKEND_HERDR_PARENT_ID:-}
   if [ -n "$wsid" ]; then
     FM_BACKEND_HERDR_WS_ID=$wsid
     printf '%s' "$wsid"

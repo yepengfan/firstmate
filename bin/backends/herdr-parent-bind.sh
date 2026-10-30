@@ -124,12 +124,14 @@ fm_backend_herdr_parent_bind() {
   [ "$existing" = "$parent" ]
 }
 
-# Prints the workspace id to adopt, or nothing when the caller must create one.
-# Returns 0 for either success, and 3 when placement must refuse.
-# The proven list is kept in FM_BACKEND_HERDR_PARENT_INVENTORY for the create bind.
+# Returns 0 when FM_BACKEND_HERDR_PARENT_ID is the workspace to adopt, or empty
+# when the caller must create one. Returns 3 when placement must refuse.
+# Call it as a plain statement. A command substitution would drop the inventory
+# the create path has to bind. FM_BACKEND_HERDR_PARENT_INVENTORY keeps that list.
 fm_backend_herdr_parent_resolve_flat() {  # <session> <role-label>
   local session=$1 label=$2 list wsid matches count bound_status
   FM_BACKEND_HERDR_PARENT_INVENTORY=""
+  FM_BACKEND_HERDR_PARENT_ID=""
   list=$(fm_backend_herdr_workspace_inventory "$session") || {
     echo "error: herdr workspace list for session '$session' is unreadable or does not prove a unique workspace inventory; refusing to create a workspace labeled '$label'" >&2
     return 3
@@ -159,7 +161,8 @@ fm_backend_herdr_parent_resolve_flat() {  # <session> <role-label>
   esac
   if [ -n "$wsid" ]; then
     fm_backend_herdr_parent_bind "$session" "$wsid" "$list" || return 3
-    printf '%s' "$wsid"
+    # shellcheck disable=SC2034  # workspace_ensure reads this in the caller shell
+    FM_BACKEND_HERDR_PARENT_ID=$wsid
   fi
 }
 
