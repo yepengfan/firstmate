@@ -1469,7 +1469,8 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # returned by THIS projected create immediately after its owning parent's
 # contiguous child block and before the next parent.
 #
-# <parent-label> is the owning FM_HOME label (firstmate or 2ndmate-<id>).
+# <parent-label> is the owning parent's current live label, which may differ
+# from the FM_HOME role label after a rename.
 # Optional <parent-workspace-id> is that parent's EXACT id, which the caller
 # already resolved from the launching agent's own herdr identity. When given it
 # anchors the owning parent by id, so two workspaces sharing the home label no
@@ -1971,7 +1972,7 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #                   own per-home workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
 # With no herdr ancestry at all there is no launcher workspace to inherit.
-# A parent id proven by this home's validated journals is the placement
+# A parent id proven by this home's durable binding or validated journals is the placement
 # authority and wins over the role label. The role label is only the fallback
 # when no such parent is recorded. It must then resolve to exactly ONE
 # workspace. Two same-labeled home workspaces with no launcher identity and no
@@ -2855,7 +2856,7 @@ fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-p
 
 # fm_backend_herdr_projection_parent_workspace_exact: resolve one exact parent
 # workspace. Prints "<workspace-id>\t<live-label>".
-# A parent proven by this home's validated journals wins, including when
+# A parent proven by this home's durable binding or validated journals wins, including when
 # another workspace still carries <parent-label>. The role label is the
 # fallback only when no proven parent is recorded, and only when it matches
 # exactly one workspace. Disagreeing parent records and an unreadable

@@ -445,7 +445,7 @@ pass "real herdr E2E: a --secondmate launch still stands up that secondmate's ow
 
 # --- 8. teardown closes only the worker's own pane --------------------------
 
-FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$DUP_HOME/state" FM_DATA_OVERRIDE="$DUP_HOME/data" \
+FM_HOME="$DUP_HOME" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$DUP_HOME/state" FM_DATA_OVERRIDE="$DUP_HOME/data" \
   FM_CONFIG_OVERRIDE="$DUP_HOME/config" \
   "$ROOT/bin/fm-teardown.sh" dupC >"$TMP_ROOT/teardown.out" 2>&1
 status=$?
