@@ -1,0 +1,1 @@
+error: herdr home label 'firstmate' matches no workspace in session 'fm-lab-fm-herdr-launche-75796-19286', and this home's recorded parent workspaces do not agree on one live workspace; refusing to create another workspace labeled 'firstmate'

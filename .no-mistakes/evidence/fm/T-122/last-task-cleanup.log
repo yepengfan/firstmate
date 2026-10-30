@@ -1,0 +1,17 @@
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for renA: 20292 24488
+teardown: force-killing leaked worktree process(es) for renA: 20292
+A new version of treehouse is available: v3.1.0 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+/Users/tedfan/Developer/rebate-service/data/T-122/nm-home/worktrees/93688c5831f9/01M65A5J8D994WFGQQ7Z7KDSS1/.herdr-launcher-e2e.Y39oUd/scratch-project: already current
+Terminated: 15             env FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" FM_PROJECTS_OVERRIDE="$PROJECTS" "$SCRIPT_DIR/fm-fleet-snapshot.sh" --secondmate-home-summary > "$HOME_SUMMARY_TMP" 2> "$HOME_SUMMARY_ERR_TMP"
+teardown renA complete (window fm-lab-fm-herdr-launche-75796-19286:wB:p2, worktree /Users/tedfan/Developer/treehouse-pool/.treehouse/scratch-project-e3f849/4/scratch-project)
+Backlog: renA just finished (this home keeps no markdown backlog at /Users/tedfan/Developer/rebate-service/data/T-122/nm-home/worktrees/93688c5831f9/01M65A5J8D994WFGQQ7Z7KDSS1/.herdr-launcher-e2e.Y39oUd/renamed-home/data/backlog.md). Update /Users/tedfan/Developer/rebate-service/data/T-122/nm-home/worktrees/93688c5831f9/01M65A5J8D994WFGQQ7Z7KDSS1/.herdr-launcher-e2e.Y39oUd/renamed-home/data/backlog.md - move renA to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
