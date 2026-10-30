@@ -151,7 +151,7 @@ Avoid naming a personal workspace `firstmate` or `2ndmate-<id>` for that reason.
 Also avoid it because the adapter cannot distinguish that label collision from its own container.
 
 Renaming the home workspace does not make it a different parent.
-The placement owner persists the verified parent id for each named session in `state/herdr-parent-<URI-encoded-session>.json`, bound to the canonical home and session.
+`bin/backends/herdr-parent-bind.sh` persists the verified parent id for each named session in `FM_HOME/state/herdr-parent-<URI-encoded-session>.json`, bound to the canonical home and session.
 Flat and projected placement establish this binding, which survives ordinary task teardown.
 Validated presentation journals whose matching metadata names the same endpoint also contribute parent ids when resolving an existing home.
 That proven id wins even when another workspace still carries the role label.
