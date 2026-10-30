@@ -97,9 +97,9 @@ Removing or upgrading the shadowing client is the durable fix.
 ## Watching and task containers
 
 The ordinary topology puts one task tab per endpoint in the exact workspace of the Firstmate or secondmate that launches it.
-When the launcher has no Herdr workspace to inherit, the adapter maintains one durable home-labeled workspace instead.
+When the launcher has no Herdr workspace to inherit, the adapter uses the home's verified parent under [Firstmate running outside Herdr](#firstmate-running-outside-herdr).
 
-| Home | Workspace label |
+| Home | Initial workspace label |
 | --- | --- |
 | Primary | `firstmate` |
 | Secondmate | `2ndmate-<secondmate-id>`, derived from its validated `.fm-secondmate-home` marker |
@@ -119,7 +119,7 @@ Later task creation does not intentionally steal focus.
 
 ### Placement beside the launcher
 
-Herdr does not enforce workspace or tab label uniqueness, so a label can never decide where a worker goes.
+Herdr does not enforce workspace or tab label uniqueness, so a label alone cannot prove launcher identity.
 
 Herdr 0.7.5 exports `HERDR_ENV`, `HERDR_PANE_ID`, `HERDR_SESSION`, `HERDR_SOCKET_PATH`, `HERDR_TAB_ID`, and `HERDR_WORKSPACE_ID` into every process it manages a pane for.
 A Firstmate or secondmate agent's own commands inherit them.
@@ -143,12 +143,23 @@ That covers:
 
 ### Firstmate running outside Herdr
 
-Firstmate running outside Herdr entirely has no launcher workspace to inherit, so its workers use this home's own labeled workspace, created on first use.
-That path needs the home label to identify exactly one workspace.
-Two workspaces sharing it are an unresolvable placement and refuse rather than adopting either.
+Firstmate running outside Herdr entirely has no launcher workspace to inherit, so its workers use this home's recorded parent workspace.
+Only when no parent is recorded does placement fall back to the home label, adopting one matching workspace or creating one when none matches.
+Two workspaces sharing that fallback label are an unresolvable placement and refuse rather than adopting either.
 
 Avoid naming a personal workspace `firstmate` or `2ndmate-<id>` for that reason.
 Also avoid it because the adapter cannot distinguish that label collision from its own container.
+
+Renaming the home workspace does not make it a different parent.
+`bin/backends/herdr-parent-bind.sh` persists the verified parent id for each named session in `FM_HOME/state/herdr-parent-<URI-encoded-session>.json`, bound to the canonical home and session.
+Flat and projected placement establish this binding, which survives ordinary task teardown.
+Validated presentation journals whose matching metadata names the same endpoint also contribute parent ids when resolving an existing home.
+That proven id wins even when another workspace still carries the role label.
+Bindings and accepted journals must agree on one live parent id.
+A stale or conflicting parent, or a workspace list that is unreadable, malformed, or contains a repeated workspace id, refuses before adopting or creating a workspace under the role label.
+A partial journal, or one whose endpoint does not match the task metadata, is not a placement authority and does not name the worker endpoint.
+The journal stores the workspace's current label as a snapshot.
+The id remains the placement authority, and restart reclaim resolves its current live label rather than requiring the stored label snapshot to match.
 
 An older secondmate workspace using `firstmate-<id>` is not migrated automatically.
 Rename it manually before expecting new tasks or recovery to use it.
@@ -160,8 +171,7 @@ The one recovery that does place new work is the control plane's reclaim of a de
 It mints a replacement tab through this section's ordinary placement rules while pinning the herdr session the task's record names ([`agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
 
 Existing task operations use recorded endpoint ids and do not move a live task when labels change.
-The per-home workspace is reused while it has task tabs.
-Closing its last tab can remove the workspace, and the next spawn recreates it.
+Closing its last tab can remove the workspace; a recorded parent that disappears triggers the stale-binding refusal described above.
 
 ## Presentation spaces
 
@@ -252,7 +262,7 @@ Creation proceeds in this order:
 
 1. Firstmate atomically publishes a three-field version 1 journal containing a random 128-bit base64url token, before asking Herdr to create anything.
 2. After the new workspace converges to one exact task endpoint beneath one exact parent workspace id, the journal advances to a version 2 binding.
-   That binding records the physical home, named session, endpoint, parent, and immutable expected labels.
+   That binding records the physical home, named session, endpoint, parent id and label snapshot, and expected workspace and task labels.
 
 Another parent with the same presentation label does not prevent publication or participate in restart reclaim.
 
@@ -262,7 +272,7 @@ Neither token, title, nor journal authorizes send, capture, task ownership, Tree
 ### Owning parent and tabs
 
 The owning parent is the launcher's own exact workspace, resolved from the same identity the flat path uses.
-It falls back to a unique home-label lookup only for a Firstmate outside Herdr.
+Outside Herdr, it follows the same [recorded-parent resolution](#firstmate-running-outside-herdr) as flat placement.
 Projected children are never collapsed back into that parent.
 The parent is the placement and ordering reference the projection is bound under.
 

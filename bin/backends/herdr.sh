@@ -1469,7 +1469,8 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # returned by THIS projected create immediately after its owning parent's
 # contiguous child block and before the next parent.
 #
-# <parent-label> is the owning FM_HOME label (firstmate or 2ndmate-<id>).
+# <parent-label> is the owning parent's current live label, which may differ
+# from the FM_HOME role label after a rename.
 # Optional <parent-workspace-id> is that parent's EXACT id, which the caller
 # already resolved from the launching agent's own herdr identity. When given it
 # anchors the owning parent by id, so two workspaces sharing the home label no
@@ -1761,6 +1762,7 @@ fm_backend_herdr_launcher_identity() {  # <session>
   FM_BACKEND_HERDR_LAUNCHER_PANE_ID=""
   FM_BACKEND_HERDR_LAUNCHER_TAB_ID=""
   FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=""
+  FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_LABEL=""
   [ -n "$pane" ] || return 2
 
   # Same-session proof, before the pane id is trusted at all: herdr pane ids
@@ -1842,6 +1844,14 @@ fm_backend_herdr_launcher_identity() {  # <session>
   # shellcheck disable=SC2034  # callers consume the verified binding's parts
   FM_BACKEND_HERDR_LAUNCHER_TAB_ID=$tab
   FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID=$workspace
+  FM_BACKEND_HERDR_LAUNCHER_INVENTORY=$list
+  # The id above is the placement authority. The label is the current snapshot
+  # only, so a renamed parent still binds and is not treated as a different home.
+  # shellcheck disable=SC2034  # fm-spawn copies this into the presentation journal
+  FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_LABEL=$(printf '%s' "$list" | jq -r --arg workspace "$workspace" '
+    [.result.workspaces[] | select(.workspace_id == $workspace)]
+    | if length == 1 and (.[0].label | type) == "string" then .[0].label else "" end
+  ')
   return 0
 }
 
@@ -1961,22 +1971,33 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #   other-home    - a --secondmate launch, which stands up a DIFFERENT home's
 #                   own per-home workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
-# With no herdr ancestry at all there is no launcher workspace to inherit, so
-# the per-home label lookup below stays the resolver - but it must then resolve
-# to exactly ONE workspace. Two same-labeled home workspaces with no launcher
-# identity to disambiguate them is an unresolvable placement, and adopting
-# either one is the very defect this refuses.
-#
+# With no herdr ancestry at all there is no launcher workspace to inherit.
+# Parent identity then comes from bin/backends/herdr-parent-bind.sh.
 # Returns 0 on success, 3 for a refusal whose exact reason is already on
 # stderr, and 1 for a failed or unparseable herdr call.
+# shellcheck source=bin/backends/herdr-parent-bind.sh
+if ! . "$FM_BACKEND_HERDR_ROOT/bin/backends/herdr-parent-bind.sh"; then
+  echo "error: herdr parent-binding helper failed to load; refusing placement that could mint a role-labeled workspace" >&2
+  exit 1
+fi
+if ! command -v fm_backend_herdr_parent_bind >/dev/null 2>&1 \
+  || ! command -v fm_backend_herdr_parent_resolve_flat >/dev/null 2>&1 \
+  || ! command -v fm_backend_herdr_parent_bind_created >/dev/null 2>&1 \
+  || ! command -v fm_backend_herdr_projection_parent_workspace_exact >/dev/null 2>&1; then
+  echo "error: herdr parent-binding helper loaded without its placement functions; refusing placement that could mint a role-labeled workspace" >&2
+  exit 1
+fi
+
 fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship>]
-  local session=$1 cwd=$2 relationship=${3:-launcher-home} wsid out label matches count status
+  local session=$1 cwd=$2 relationship=${3:-launcher-home} wsid out label status placement_status
   FM_BACKEND_HERDR_WS_ID=""
   FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
   if [ "$relationship" = launcher-home ]; then
     fm_backend_herdr_launcher_identity "$session" && status=0 || status=$?
     case "$status" in
       0)
+        fm_backend_herdr_parent_bind "$session" "$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID" \
+          "$FM_BACKEND_HERDR_LAUNCHER_INVENTORY" || return 3
         FM_BACKEND_HERDR_WS_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
         printf '%s' "$FM_BACKEND_HERDR_WS_ID"
         return 0
@@ -1986,13 +2007,10 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
     esac
   fi
   label=$(fm_backend_herdr_workspace_label)
-  matches=$(fm_backend_herdr_workspace_find_all "$session")
-  count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
-  if [ "$count" -gt 1 ]; then
-    echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and this spawn has no herdr parent pane to identify which one is its own; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
-    return 3
-  fi
-  wsid=${matches%%$'\n'*}
+  placement_status=0
+  fm_backend_herdr_parent_resolve_flat "$session" "$label" || placement_status=$?
+  [ "$placement_status" -eq 0 ] || return "$placement_status"
+  wsid=${FM_BACKEND_HERDR_PARENT_ID:-}
   if [ -n "$wsid" ]; then
     FM_BACKEND_HERDR_WS_ID=$wsid
     printf '%s' "$wsid"
@@ -2001,6 +2019,7 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$cwd" --label "$label" --no-focus 2>/dev/null) || return 1
   wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
   [ -n "$wsid" ] || return 1
+  fm_backend_herdr_parent_bind_created "$session" "$wsid" "$label" || return 3
   FM_BACKEND_HERDR_WS_ID=$wsid
   # Herdr seeds a new workspace with one auto-created default tab firstmate
   # never uses. It is NOT pruned here: at this instant it is the workspace's
@@ -2699,23 +2718,8 @@ fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-p
   fi
 }
 
-# fm_backend_herdr_projection_parent_workspace_exact: resolve one exact parent
-# workspace only when its presentation label is unique in the named session.
-fm_backend_herdr_projection_parent_workspace_exact() {  # <session> <parent-label>
-  local session=$1 parent_label=$2 list
-  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 1
-  printf '%s' "$list" | jq -er --arg parent_label "$parent_label" '
-    (.result.workspaces // null) as $spaces
-    | select(($spaces | type) == "array")
-    | [$spaces[]? | select(.label == $parent_label)]
-    | if length == 1
-        and (.[0].workspace_id | type) == "string"
-        and (.[0].workspace_id | length) > 0
-      then .[0].workspace_id
-      else empty
-      end
-  ' 2>/dev/null
-}
+# fm_backend_herdr_projection_parent_workspace_exact is defined in
+# bin/backends/herdr-parent-bind.sh.
 
 # fm_backend_herdr_projection_live_binding_matches: verify one exact projected
 # workspace, its single task tab/pane, its unique token label, and its current
@@ -2790,9 +2794,9 @@ fm_backend_herdr_projection_reclaim_rollback() {  # <session> <new-pane>
 # Return 0 means exact reclaim, 2 means non-mutating or exactly rolled-back
 # refusal with flat fallback permitted, and 1 means a live/unknown or
 # post-mutation uncertainty that must refuse the launch.
-fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <parent-label> <task-label> <cwd>
+fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <task-label> <cwd>
   local session=$1 journal=$2 id=$3 home=$4 meta_workspace=$5 meta_tab=$6 meta_pane=$7
-  local parent_label=$8 task_label=$9 cwd=${10} canonical_home state focus_before active_tab out new_tab new_pane info close_status
+  local parent_label task_label=$8 cwd=$9 canonical_home state focus_before active_tab out new_tab new_pane info close_status
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=""
   FM_BACKEND_HERDR_PROJECTION_PANE_ID=""
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
@@ -2809,11 +2813,15 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
      || [ "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" != "$meta_workspace" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" != "$meta_tab" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" != "$meta_pane" ] \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$parent_label" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" != "$task_label" ]; then
     echo "warning: herdr presentation binding for $id does not match its exact home, endpoint, or parent; spawning flat" >&2
     return 2
   fi
+  local parent_raw parent_id
+  parent_raw=$(FM_HOME="$home" fm_backend_herdr_projection_parent_workspace_exact "$session" "" "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID") || return 1
+  parent_id=${parent_raw%%$'\t'*}
+  [ "$parent_id" = "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" ] || return 1
+  parent_label=${parent_raw#*$'\t'}
   if ! fm_backend_herdr_projection_live_binding_matches \
     "$session" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
     "$meta_workspace" "$meta_tab" "$meta_pane" \

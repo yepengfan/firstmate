@@ -3941,7 +3941,7 @@ else
           FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_projection_reclaim_task \
             "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" "$HERDR_LABEL_HOME" \
             "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" "$HERDR_RECOVERY_PANE_ID" \
-            "$HERDR_PARENT_LABEL" "$W" "$PROJ_ABS"
+            "$W" "$PROJ_ABS"
           HERDR_RECLAIM_STATUS=$?
           set -e
           case "$HERDR_RECLAIM_STATUS" in
@@ -3983,9 +3983,25 @@ else
           HERDR_LAUNCHER_STATUS=$?
           set -e
           case "$HERDR_LAUNCHER_STATUS" in
-          0) HERDR_PARENT_WORKSPACE_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID ;;
-          2) HERDR_PARENT_WORKSPACE_ID=$(fm_backend_herdr_projection_parent_workspace_exact \
-            "$HERDR_SES" "$HERDR_PARENT_LABEL" 2>/dev/null || true) ;;
+          0)
+            HERDR_PARENT_WORKSPACE_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
+            FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_parent_bind \
+              "$HERDR_SES" "$HERDR_PARENT_WORKSPACE_ID" "$FM_BACKEND_HERDR_LAUNCHER_INVENTORY" || exit 1
+            if [ -n "${FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_LABEL:-}" ]; then
+              HERDR_PARENT_LABEL=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_LABEL
+            fi
+            ;;
+          2)
+            herdr_parent_raw=$(fm_backend_herdr_projection_parent_workspace_exact \
+              "$HERDR_SES" "$HERDR_PARENT_LABEL" 2>/dev/null || true)
+            HERDR_PARENT_WORKSPACE_ID=${herdr_parent_raw%%$'\t'*}
+            case "$herdr_parent_raw" in
+              *$'\t'*)
+                herdr_parent_live=${herdr_parent_raw#*$'\t'}
+                [ -n "$herdr_parent_live" ] && HERDR_PARENT_LABEL=$herdr_parent_live
+                ;;
+            esac
+            ;;
           *)
             spawn_herdr_presentation_order_lock_release
             exit 1
